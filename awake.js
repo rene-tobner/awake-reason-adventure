@@ -61,35 +61,16 @@ class MapObject {
     whatObj(char) {
         let obj = ''
         switch (char) {
-        case ' ':
-            obj = 'space';
-            break;
-        case '/':
-            obj = 'slash';
-            break;
-        case '\\':
-            obj = 'backslash';
-            break;
-        case 'X':
-            obj = 'X';
-            break;
-        case '|':
-            obj = 'pipe';
-            break;
-        case '-':
-            obj = 'minus';
-            break;
-        case '+':
-            obj = 'plus';
-            break;
-        case '#':
-            obj = 'pound';
-            break;
-        default:
-            obj = 'unknown';
-            break;
+        case ' ': return 'space';
+        case '/': return 'slash';
+        case '\\': return 'backslash';
+        case 'X': return 'X';
+        case '|': return 'pipe';
+        case '-': return 'minus';
+        case '+': return 'plus';
+        case '#': return 'pound';
+        default: return 'unknown';
         }
-        return obj;
     }
 }
 
