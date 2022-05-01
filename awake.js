@@ -60,15 +60,15 @@ class MapObject {
     }
     whatObj(char) {
         switch (char) {
-        case ' ': return 'space';
-        case '/': return 'slash';
+        case ' ' : return 'space';
+        case '/' : return 'slash';
         case '\\': return 'backslash';
-        case 'X': return 'X';
-        case '|': return 'pipe';
-        case '-': return 'minus';
-        case '+': return 'plus';
-        case '#': return 'pound';
-        default: return 'unknown';
+        case 'X' : return 'X';
+        case '|' : return 'pipe';
+        case '-' : return 'minus';
+        case '+' : return 'plus';
+        case '#' : return 'pound';
+        default:   return 'unknown';
         }
     }
 }
