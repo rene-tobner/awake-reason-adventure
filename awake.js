@@ -59,7 +59,6 @@ class MapObject {
         // this.width ??
     }
     whatObj(char) {
-        let obj = ''
         switch (char) {
         case ' ': return 'space';
         case '/': return 'slash';
