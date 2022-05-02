@@ -1,0 +1,9 @@
+* Awake Reason Adventure
+- A bird's eye view adventure made with:
+  - maps:  Emacs artist-mode,
+  - simple Javascript: html/canvas, requestAnimationFrame
+** DONE for now:
+- Pacman: blue square can eat the map, congrats! :-)
+** TODO next up:
+- detect map collisions
+- meet NPCs (non-player characters) telling stories, insightful video?
