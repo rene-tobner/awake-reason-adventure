@@ -3,7 +3,7 @@
 
 #+HTML_HEAD: <link rel="stylesheet" href="../assets/tachyons.min.css"/>
 
-#+HTML_HEAD_EXTRA: <script>window.onload = function () {let paras = Array.from(document.getElementsByTagName('p')); paras.forEach( p => p.className += " measure-wide lh-copy"); let body = document.getElementsByTagName('body')[0]; body.className += " w-100 sans-serif f4 bg-white"; let toc = document.getElementById('table-of-contents'); toc.className += " pa3 pa5-ns"; let pres = Array.from(document.getElementsByTagName('pre')); pres.forEach(pr => {pr.className += " pv3 black-80"; }); let head1 = document.getElementsByTagName('h1')[0]; head1.className += " f3 f1-m f-headline-l tc"; }</script>
+#+HTML_HEAD_EXTRA: <script>window.onload = function () {let paras = Array.from(document.getElementsByTagName('p')); paras.forEach( p => p.className += " measure-wide lh-copy"); let body = document.getElementsByTagName('body')[0]; body.className += " w-100 sans-serif f4 bg-white"; let toc = document.getElementById('table-of-contents'); toc.className += " pa3 pa5-ns"; let pres = Array.from(document.getElementsByTagName('pre')); pres.forEach(pr => {pr.className += " pv3 black-80"; }); let head1 = document.getElementsByTagName('h1')[0]; head1.className += " f3 f1-m f-headline-l tc"; let as = Array.from(document.getElementsByTagName('a')); as.forEach(a => a.className += " link")}</script>
 
 # #+HTML_HEAD_EXTRA: <link rel="stylesheet" href="../tachyons-select.css"/>
 #+OPTIONS: html-style:nil
