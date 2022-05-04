@@ -55,13 +55,13 @@ class MapObject {
         this.x = x;
         this.y = y;
         this.obj = this.whatObj(obj);
-        this.collide = this.obj === 'space' ? false : true;
+        this.obstacle = this.obj === 'space' ? false : true;
         // oneOf: space | slash | backslash | X | pipe | minus | plus | pound
         // this.width ??
     }
     whatObj(char) {
         switch (char) {
-        case ' ' : return 'space'; // collide with character/hero etc.: NO, else YES
+        case ' ' : return 'space'; // no obstacle with respect to character/hero etc.: others yes, for now
         case '/' : return 'slash';
         case '\\': return 'backslash';
         case 'X' : return 'X';

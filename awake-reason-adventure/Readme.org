@@ -5,5 +5,29 @@
 ** DONE for now:
 - Pacman: blue square can eat the map, congrats! :-)
 ** TODO next up:
-- detect map collisions
+- detect map collisions of hero or other NPCs with map glyphs
+- map glyph:
+#+BEGIN_SRC js
+   x,y    x+8,y
+    +------+
+    |      |
+    |      |
+    |      |
+    |      |
+    |      |
+    |      |
+    +------+
+   x,y+15 x+8,y+15
+
+//https://spicyyoghurt.com/tutorials/html5-javascript-game-development/collision-detection-physics
+rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2) {
+    // Check x and y for overlap
+    if (x2 > w1 + x1 || x1 > w2 + x2 || y2 > h1 + y1 || y1 > h2 + y2){
+        return false;
+    }
+    return true;
+}
+#+END_SRC
+
+
 - meet NPCs (non-player characters) telling stories, insightful video?
