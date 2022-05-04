@@ -1,0 +1,277 @@
+#+TITLE: Notes on JS async operations
+#+DATE: 7. Dezember 2019
+
+#+HTML_HEAD: <link rel="stylesheet" href="../assets/tachyons.min.css"/>
+
+#+HTML_HEAD_EXTRA: <script>window.onload = function () {let paras = Array.from(document.getElementsByTagName('p')); paras.forEach( p => p.className += " measure-wide lh-copy"); let body = document.getElementsByTagName('body')[0]; body.className += " w-100 sans-serif f4 bg-white"; let toc = document.getElementById('table-of-contents'); toc.className += " pa3 pa5-ns"; let pres = Array.from(document.getElementsByTagName('pre')); pres.forEach(pr => {pr.className += " pv3 black-80"; }); let head1 = document.getElementsByTagName('h1')[0]; head1.className += " f3 f1-m f-headline-l tc"; }</script>
+
+# #+HTML_HEAD_EXTRA: <link rel="stylesheet" href="../tachyons-select.css"/>
+#+OPTIONS: html-style:nil
+#+html:<article class="pa3 pa5-ns">
+* tl;dr
+Async/await works by making a generator check a promis for settlement (settle: Did the promise resolve to a value or reject with an error, yet?). (gen-prom-check)
+
+If targeting js-environments without native generator implementation,
+- there is a generator runtime for async operations by facebook. Async code needs to be transpiled via the regenerator library.
+- TODO: this approach seems to be used with react-native (bug-breaking-react-native)
+  - Why used at all? More efficient than Promise-only translation, see below?
+related:
+  - async-to-promise-rather-than-async-to-generator
+However, async/await can also be transpiled to pure promises via `babel-plugin-async-to-promises`. (promise-only)
+
+* Blocking vs. Non-Blocking
+** PHP->blocking
+In languages which block script execution when IO-operations are being done, there is no problem to simply embed these operations in your method chains, like here in PHP where `doRequest` (1) is a method simulating a network request:
+
+
+#+BEGIN_SRC php
+$w = new Work ($data);
+$w->selectSubset(0) //working on Mario
+  ->prepareQuery()
+  ->doRequest()     // (1) sleeps a bit / blocks until execution is finished
+  ->logResult()     // next method can be called!
+  ->processResult();
+#+END_SRC
+
+** JS: async/await, non-blocking
+Doing the same in languages which by default do not block on IO, like javascript runtimes, was quite daunting until async/await keywords of ES7 (node v7.6.0) have arrived. (Before that you had to rely on passing callbacks to functions, or registering the callback via `Promise.then()`.) For example, a one-to-one naive translation of the PHP code above results in the following (Spoiler: which is not going to work, because `doRequest` is called without await operator…):
+
+#+BEGIN_SRC js
+let w = new Work (data)
+    .selectSubset(0)
+    .prepareQuery()
+    .doRequest()     // (1) is already async function, see below
+    .logResult()
+    .processResult()
+#+END_SRC
+
+Where `doRequest` looks like this:
+
+#+BEGIN_SRC 
+class Work
+    [...]
+    async doRequest() {
+
+        function get(uri){
+            return new Promise((resolve,reject) => {
+
+                setTimeout(() => {
+                    if (uri==='Mario')
+                        resolve("It'seh meeeh, Mario!")
+                    else 
+                        resolve("Evil twin detected! )=D")
+
+                }, 1000)
+            })
+        }
+
+        console.log(`:: Requesting >${this.uri}<`)
+
+        let res = await get(this.uri)     // (2) wait
+        this.res = res                    // (3) store in instance variable
+
+        // (4) log the result
+        console.log(`:: Response for >${this.uri}< arrived: `, this.res, ' (from doRequest() )')
+
+        return this
+    }
+    [...]
+#+END_SRC
+
+So, this will not work out, because, as already stated, the default execution model is non-blocking (asynchronous) and this is not going to change.
+
+The output of the above code is the following, showing that the logging from `doRequest` ((4) above) comes much too late:
+
+#+BEGIN_SRC 
+:: Requesting >Mario<
+:: query result:  null (from .logResult)
+:: merging query result with data....
+[ { user: 'Mario', verdict: null }, { user: 'Wario' } ]
+:: Done!
+====================
+
+:: Response for >Mario< arrived:  It'seh meeeh, Mario!  (from doRequest() )
+#+END_SRC
+
+Since all async functions implicitly return a Promise, the Promise is resolved eventually, but in the meantime the code after `doRequest` has already run.
+
+Now, async/await, as used in doRequest, gives the possibility to suspend the current function via `await` (2), but why is not working, yet?
+
+** "block" via await
+The reason is that the JS runtime doesn’t know about the async nature of `doRequest`, when it is called as a regular function at the top-level of your module/script, and to make the async nature clear, `doRequest` has to be awaited for. Since `await` is only allowed[fn:1] in functions declared async, we gonna wrap everything with some `async function` (1) and `await` (2) the async calls, as seen below:
+
+#+BEGIN_SRC 
+async function run (){     // (1)
+
+    let w = new Work (data)
+
+    //working on Mario
+
+    w.selectSubset(0)
+    w.prepareQuery()
+
+    await w.doRequest()    // (2) now it really waits
+
+    w.logResult()          // (3) can log the result of (2)
+    w.processResult()
+}
+
+run()
+#+END_SRC
+
+** While "blocking", do something else
+So, sadly the method chain is broken up but it works as intended … AND since `await` only suspends the `run` function, node/javascript can still do other things in between, for example updating a counter via:
+
+#+BEGIN_SRC 
+
+// [... same as before]
+let cnt = 1
+let i = setInterval(() => {
+    if(cnt === 15)
+        clearInterval(i)
+    console.log("++ working on counter :",cnt++)
+}, 100)
+
+run()
+#+END_SRC
+
+will yield:
+
+#+BEGIN_SRC 
+:: input data: 
+ [ { user: 'Mario' }, { user: 'Wario' } ]
+:: Requesting >Mario<                                     (1)
+++ working on counter : 1
+++ working on counter : 2
+++ working on counter : 3
+++ working on counter : 4
+++ working on counter : 5
+++ working on counter : 6
+++ working on counter : 7
+++ working on counter : 8
+++ working on counter : 9
+:: Response for >Mario< arrived:  It'seh meeeh, Mario!    (2)
+:: query result:  It'seh meeeh, Mario! (from .logResult)
+:: merging query result with data....
+[ { user: 'Mario', verdict: 'It\'seh meeeh, Mario!' },
+  { user: 'Wario' } ]
+:: Done!
+====================
+#+END_SRC
+
+As one can see, after making the request (1) node can do some other work, our code seems to be suspended, awaiting the response, until finally (2) the response is logged from `doRequest` and one line later from the `logResult` method and so on. Therefore we have a means to write synchronous looking code, while the efficiency of node’s default asynchronous, non-blocking execution model is preserved.
+
+
+* Generators and Promises as aequivalence of async/await
+Since babel transpiles async/await code to generators which are specialized to yield promises, as you can see here:
+
+async-await-2-gen-promise
+the two constructs are at least equivalent. See this file in my repo for elucidating logging.
+
+Another article dealing with the aequivalence:
+
+simple async implementation using generators and promises
+hackernoon/async-await-generators-promises
+Also, async/await should be internally implemented using generators, as hinted at here: exploringjs/generators-overview (“ECMAScript 2017 will have async functions which are internally based on generators.”)
+
+TODO Implementation of generators and async/await in V8?
+Generators = semi-coroutines, shallow coroutines
+Coroutines? (Wiki/Coroutine)
+“allowing execution to be suspended and resumed”
+= they have some sort `yield` mechanism
+“generalize subroutines”
+= any coroutine can be converted into a subroutine by not calling `yield`
+“for non-preemptive multitasking”
+= cooperative multitasking: “a style of computer multitasking in which the operating system never initiates a context switch from a running process to another process. Instead, processes voluntarily yield control […]” (my emphasis, see Wiki/CoopMultitasking)
+Generators vs. Coroutines (fibers)
+From https://github.com/yortus/asyncawait/issues/51 (asyncawait is a node.js package using node-fibers; fibers are a system level construct, namely cooperrative threads, which is equivalent to the language level construct of coroutines):
+
+“Fibers and coroutines support deep continuations. This means that you can yield at any depth in the call stack and resume there later.”
+
+Example from the same thread:
+
+#+BEGIN_SRC js
+let testFn = async (() => {
+
+    someArray = [...];
+
+    let results = someArray
+        .filter(el => await (someAsyncTest())   // (1)
+        .map(el => await (someAsyncMapping());  // (2)
+
+    return results;
+});
+#+END_SRC
+
+With the package `asyncawait`, it is unnecessary to give filter or map (1,2) an `async` callback. To achieve the same with regular async/await, you’d have to sprinkle a lot more async/await operators and use `Promise.all`:
+
+#+BEGIN_SRC js
+let testFn = async () => {
+
+    let someArray = [1,2,3,4]
+
+    let results = await Promise.all (
+        someArray
+            .map(async el => await el + 1)
+    )
+
+    return results;
+};
+
+async function run (){
+
+    let res = await testFn()
+    console.log(res)
+}
+
+run() // -> [2,3,4,5]
+#+END_SRC
+
+“Generators only support single frame continuations. This means that yielding only saves 1 stack frame. This is less powerful and it explains why you need to yield (or await) at all levels when you use generators (or ES7 async/await) to streamline async call graphs.” (again https://github.com/yortus/asyncawait/issues/51 )
+
+This explains the top-level-await for my `doRequest` above (and the async-function-wrapper). Generators are simply not powerful enough, and this seems to be quite reasonable for running in your browser tab (while node-fibers is still very active!)
+
+Related discussion:
+TODO: links!
+exploringJS-shallow-generators
+but preserving run-to-completion
+why-coroutines-wont-work-on-the-web
+“coroutines no, generators yes”
+
+
+* Promise translation of async/await actions
+
+#+BEGIN_SRC js
+let w = new Work(data);
+
+function run(w) {
+  return Promise.resolve().then(function () {
+    //working on Mario
+    w.selectSubset(0);
+    w.prepareQuery();
+    return w.doRequest();
+  }).then(function () {
+    w.logResult();
+    w.processResult();
+
+    //--------------------
+    // working on Wario
+
+    w.selectSubset(1);
+    w.prepareQuery();
+    return w.doRequest();
+  }).then(function () {
+    w.logResult();
+    w.processResult();
+  });
+}
+
+run(w);
+#+END_SRC
+
+* Footnotes
+
+[fn:1] 
+The `async function` context is needed as long as there is no top-level `await`, which is only available in EcmaScript Modules, i.e.modules with .mjs extension and nodejs-command line flag: `–experimental-modules` (or try: –js-flags=“–harmony-top-level-await” ?), but this didn’t work for me under node v12.13.0 . However, the support for top-level-await is definitly available in the latest version of v8: https://v8.dev/features/top-level-await.]
+
+#+html:</article>

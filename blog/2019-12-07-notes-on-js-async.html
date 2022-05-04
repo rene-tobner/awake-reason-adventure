@@ -1,0 +1,464 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<title>Notes on JS async operations</title>
+<!-- 2022-05-04 Mi 15:40 -->
+<meta  http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta  name="generator" content="Org-mode" />
+<meta  name="author" content="rtb" />
+<link rel="stylesheet" href="../assets/tachyons.min.css"/>
+<script>window.onload = function () {let paras = Array.from(document.getElementsByTagName('p')); paras.forEach( p => p.className += " measure-wide lh-copy"); let body = document.getElementsByTagName('body')[0]; body.className += " w-100 sans-serif f4 bg-white"; let toc = document.getElementById('table-of-contents'); toc.className += " pa3 pa5-ns"; let pres = Array.from(document.getElementsByTagName('pre')); pres.forEach(pr => {pr.className += " pv3 black-80"; }); let head1 = document.getElementsByTagName('h1')[0]; head1.className += " f3 f1-m f-headline-l tc"; }</script>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2013 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">Notes on JS async operations</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#sec-1">1. tl;dr</a></li>
+<li><a href="#sec-2">2. Blocking vs. Non-Blocking</a>
+<ul>
+<li><a href="#sec-2-1">2.1. PHP-&gt;blocking</a></li>
+<li><a href="#sec-2-2">2.2. JS: async/await, non-blocking</a></li>
+<li><a href="#sec-2-3">2.3. "block" via await</a></li>
+<li><a href="#sec-2-4">2.4. While "blocking", do something else</a></li>
+</ul>
+</li>
+<li><a href="#sec-3">3. Generators and Promises as aequivalence of async/await</a></li>
+<li><a href="#sec-4">4. Promise translation of async/await actions</a></li>
+</ul>
+</div>
+</div>
+<article class="pa3 pa5-ns">
+<div id="outline-container-sec-1" class="outline-2">
+<h2 id="sec-1"><span class="section-number-2">1</span> tl;dr</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+Async/await works by making a generator check a promis for settlement (settle: Did the promise resolve to a value or reject with an error, yet?). (gen-prom-check)
+</p>
+
+<p>
+If targeting js-environments without native generator implementation,
+</p>
+<ul class="org-ul">
+<li>there is a generator runtime for async operations by facebook. Async code needs to be transpiled via the regenerator library.
+</li>
+<li>TODO: this approach seems to be used with react-native (bug-breaking-react-native)
+<ul class="org-ul">
+<li>Why used at all? More efficient than Promise-only translation, see below?
+</li>
+</ul>
+</li>
+</ul>
+<p>
+related:
+</p>
+<ul class="org-ul">
+<li>async-to-promise-rather-than-async-to-generator
+</li>
+</ul>
+<p>
+However, async/await can also be transpiled to pure promises via `babel-plugin-async-to-promises`. (promise-only)
+</p>
+</div>
+</div>
+
+<div id="outline-container-sec-2" class="outline-2">
+<h2 id="sec-2"><span class="section-number-2">2</span> Blocking vs. Non-Blocking</h2>
+<div class="outline-text-2" id="text-2">
+</div><div id="outline-container-sec-2-1" class="outline-3">
+<h3 id="sec-2-1"><span class="section-number-3">2.1</span> PHP-&gt;blocking</h3>
+<div class="outline-text-3" id="text-2-1">
+<p>
+In languages which block script execution when IO-operations are being done, there is no problem to simply embed these operations in your method chains, like here in PHP where `doRequest` (1) is a method simulating a network request:
+</p>
+
+
+<div class="org-src-container">
+
+<pre class="src src-php">$w = new Work ($data);
+$w-&gt;selectSubset(0) //working on Mario
+  -&gt;prepareQuery()
+  -&gt;doRequest()     // (1) sleeps a bit / blocks until execution is finished
+  -&gt;logResult()     // next method can be called!
+  -&gt;processResult();
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-2-2" class="outline-3">
+<h3 id="sec-2-2"><span class="section-number-3">2.2</span> JS: async/await, non-blocking</h3>
+<div class="outline-text-3" id="text-2-2">
+<p>
+Doing the same in languages which by default do not block on IO, like javascript runtimes, was quite daunting until async/await keywords of ES7 (node v7.6.0) have arrived. (Before that you had to rely on passing callbacks to functions, or registering the callback via `Promise.then()`.) For example, a one-to-one naive translation of the PHP code above results in the following (Spoiler: which is not going to work, because `doRequest` is called without await operator…):
+</p>
+
+<div class="org-src-container">
+
+<pre class="src src-js">let w = new Work (data)
+    .selectSubset(0)
+    .prepareQuery()
+    .doRequest()     // (1) is already async function, see below
+    .logResult()
+    .processResult()
+</pre>
+</div>
+
+<p>
+Where `doRequest` looks like this:
+</p>
+
+<pre class="example">
+class Work
+    [...]
+    async doRequest() {
+
+        function get(uri){
+            return new Promise((resolve,reject) =&gt; {
+
+                setTimeout(() =&gt; {
+                    if (uri==='Mario')
+                        resolve("It'seh meeeh, Mario!")
+                    else 
+                        resolve("Evil twin detected! )=D")
+
+                }, 1000)
+            })
+        }
+
+        console.log(`:: Requesting &gt;${this.uri}&lt;`)
+
+        let res = await get(this.uri)     // (2) wait
+        this.res = res                    // (3) store in instance variable
+
+        // (4) log the result
+        console.log(`:: Response for &gt;${this.uri}&lt; arrived: `, this.res, ' (from doRequest() )')
+
+        return this
+    }
+    [...]
+</pre>
+
+<p>
+So, this will not work out, because, as already stated, the default execution model is non-blocking (asynchronous) and this is not going to change.
+</p>
+
+<p>
+The output of the above code is the following, showing that the logging from `doRequest` ((4) above) comes much too late:
+</p>
+
+<pre class="example">
+:: Requesting &gt;Mario&lt;
+:: query result:  null (from .logResult)
+:: merging query result with data....
+[ { user: 'Mario', verdict: null }, { user: 'Wario' } ]
+:: Done!
+====================
+
+:: Response for &gt;Mario&lt; arrived:  It'seh meeeh, Mario!  (from doRequest() )
+</pre>
+
+<p>
+Since all async functions implicitly return a Promise, the Promise is resolved eventually, but in the meantime the code after `doRequest` has already run.
+</p>
+
+<p>
+Now, async/await, as used in doRequest, gives the possibility to suspend the current function via `await` (2), but why is not working, yet?
+</p>
+</div>
+</div>
+
+<div id="outline-container-sec-2-3" class="outline-3">
+<h3 id="sec-2-3"><span class="section-number-3">2.3</span> "block" via await</h3>
+<div class="outline-text-3" id="text-2-3">
+<p>
+The reason is that the JS runtime doesn’t know about the async nature of `doRequest`, when it is called as a regular function at the top-level of your module/script, and to make the async nature clear, `doRequest` has to be awaited for. Since `await` is only allowed<sup><a id="fnr.1" name="fnr.1" class="footref" href="#fn.1">1</a></sup> in functions declared async, we gonna wrap everything with some `async function` (1) and `await` (2) the async calls, as seen below:
+</p>
+
+<pre class="example">
+async function run (){     // (1)
+
+    let w = new Work (data)
+
+    //working on Mario
+
+    w.selectSubset(0)
+    w.prepareQuery()
+
+    await w.doRequest()    // (2) now it really waits
+
+    w.logResult()          // (3) can log the result of (2)
+    w.processResult()
+}
+
+run()
+</pre>
+</div>
+</div>
+
+<div id="outline-container-sec-2-4" class="outline-3">
+<h3 id="sec-2-4"><span class="section-number-3">2.4</span> While "blocking", do something else</h3>
+<div class="outline-text-3" id="text-2-4">
+<p>
+So, sadly the method chain is broken up but it works as intended … AND since `await` only suspends the `run` function, node/javascript can still do other things in between, for example updating a counter via:
+</p>
+
+<pre class="example">
+// [... same as before]
+let cnt = 1
+let i = setInterval(() =&gt; {
+    if(cnt === 15)
+        clearInterval(i)
+    console.log("++ working on counter :",cnt++)
+}, 100)
+
+run()
+</pre>
+
+<p>
+will yield:
+</p>
+
+<pre class="example">
+:: input data: 
+ [ { user: 'Mario' }, { user: 'Wario' } ]
+:: Requesting &gt;Mario&lt;                                     (1)
+++ working on counter : 1
+++ working on counter : 2
+++ working on counter : 3
+++ working on counter : 4
+++ working on counter : 5
+++ working on counter : 6
+++ working on counter : 7
+++ working on counter : 8
+++ working on counter : 9
+:: Response for &gt;Mario&lt; arrived:  It'seh meeeh, Mario!    (2)
+:: query result:  It'seh meeeh, Mario! (from .logResult)
+:: merging query result with data....
+[ { user: 'Mario', verdict: 'It\'seh meeeh, Mario!' },
+  { user: 'Wario' } ]
+:: Done!
+====================
+</pre>
+
+<p>
+As one can see, after making the request (1) node can do some other work, our code seems to be suspended, awaiting the response, until finally (2) the response is logged from `doRequest` and one line later from the `logResult` method and so on. Therefore we have a means to write synchronous looking code, while the efficiency of node’s default asynchronous, non-blocking execution model is preserved.
+</p>
+</div>
+</div>
+</div>
+
+
+<div id="outline-container-sec-3" class="outline-2">
+<h2 id="sec-3"><span class="section-number-2">3</span> Generators and Promises as aequivalence of async/await</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+Since babel transpiles async/await code to generators which are specialized to yield promises, as you can see here:
+</p>
+
+<p>
+async-await-2-gen-promise
+the two constructs are at least equivalent. See this file in my repo for elucidating logging.
+</p>
+
+<p>
+Another article dealing with the aequivalence:
+</p>
+
+<p>
+simple async implementation using generators and promises
+hackernoon/async-await-generators-promises
+Also, async/await should be internally implemented using generators, as hinted at here: exploringjs/generators-overview (“ECMAScript 2017 will have async functions which are internally based on generators.”)
+</p>
+
+<p>
+TODO Implementation of generators and async/await in V8?
+Generators = semi-coroutines, shallow coroutines
+Coroutines? (Wiki/Coroutine)
+“allowing execution to be suspended and resumed”
+= they have some sort `yield` mechanism
+“generalize subroutines”
+= any coroutine can be converted into a subroutine by not calling `yield`
+“for non-preemptive multitasking”
+= cooperative multitasking: “a style of computer multitasking in which the operating system never initiates a context switch from a running process to another process. Instead, processes voluntarily yield control […]” (my emphasis, see Wiki/CoopMultitasking)
+Generators vs. Coroutines (fibers)
+From <a href="https://github.com/yortus/asyncawait/issues/51">https://github.com/yortus/asyncawait/issues/51</a> (asyncawait is a node.js package using node-fibers; fibers are a system level construct, namely cooperrative threads, which is equivalent to the language level construct of coroutines):
+</p>
+
+<p>
+“Fibers and coroutines support deep continuations. This means that you can yield at any depth in the call stack and resume there later.”
+</p>
+
+<p>
+Example from the same thread:
+</p>
+
+<div class="org-src-container">
+
+<pre class="src src-js">let testFn = async (() =&gt; {
+
+    someArray = [...];
+
+    let results = someArray
+        .filter(el =&gt; await (someAsyncTest())   // (1)
+        .map(el =&gt; await (someAsyncMapping());  // (2)
+
+    return results;
+});
+</pre>
+</div>
+
+<p>
+With the package `asyncawait`, it is unnecessary to give filter or map (1,2) an `async` callback. To achieve the same with regular async/await, you’d have to sprinkle a lot more async/await operators and use `Promise.all`:
+</p>
+
+<div class="org-src-container">
+
+<pre class="src src-js">let testFn = async () =&gt; {
+
+    let someArray = [1,2,3,4]
+
+    let results = await Promise.all (
+        someArray
+            .map(async el =&gt; await el + 1)
+    )
+
+    return results;
+};
+
+async function run (){
+
+    let res = await testFn()
+    console.log(res)
+}
+
+run() // -&gt; [2,3,4,5]
+</pre>
+</div>
+
+<p>
+“Generators only support single frame continuations. This means that yielding only saves 1 stack frame. This is less powerful and it explains why you need to yield (or await) at all levels when you use generators (or ES7 async/await) to streamline async call graphs.” (again <a href="https://github.com/yortus/asyncawait/issues/51">https://github.com/yortus/asyncawait/issues/51</a> )
+</p>
+
+<p>
+This explains the top-level-await for my `doRequest` above (and the async-function-wrapper). Generators are simply not powerful enough, and this seems to be quite reasonable for running in your browser tab (while node-fibers is still very active!)
+</p>
+
+<p>
+Related discussion:
+TODO: links!
+exploringJS-shallow-generators
+but preserving run-to-completion
+why-coroutines-wont-work-on-the-web
+“coroutines no, generators yes”
+</p>
+</div>
+</div>
+
+
+<div id="outline-container-sec-4" class="outline-2">
+<h2 id="sec-4"><span class="section-number-2">4</span> Promise translation of async/await actions</h2>
+<div class="outline-text-2" id="text-4">
+<div class="org-src-container">
+
+<pre class="src src-js">let w = new Work(data);
+
+function run(w) {
+  return Promise.resolve().then(function () {
+    //working on Mario
+    w.selectSubset(0);
+    w.prepareQuery();
+    return w.doRequest();
+  }).then(function () {
+    w.logResult();
+    w.processResult();
+
+    //--------------------
+    // working on Wario
+
+    w.selectSubset(1);
+    w.prepareQuery();
+    return w.doRequest();
+  }).then(function () {
+    w.logResult();
+    w.processResult();
+  });
+}
+
+run(w);
+</pre>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<h2 class="footnotes">Footnotes: </h2>
+<div id="text-footnotes">
+
+<div class="footdef"><sup><a id="fn.1" name="fn.1" class="footnum" href="#fnr.1">1</a></sup> <p class="footpara">
+The `async function` context is needed as long as there is no top-level `await`, which is only available in EcmaScript Modules, i.e.modules with .mjs extension and nodejs-command line flag: `–experimental-modules` (or try: –js-flags=“–harmony-top-level-await” ?), but this didn’t work for me under node v12.13.0 . However, the support for top-level-await is definitly available in the latest version of v8: <a href="https://v8.dev/features/top-level-await">https://v8.dev/features/top-level-await</a>.]
+</p>
+
+</article></div>
+
+
+</div>
+</div></div>
+<div id="postamble" class="status">
+<p class="date">Date: 7. Dezember 2019</p>
+<p class="author">Author: rtb</p>
+<p class="date">Created: 2022-05-04 Mi 15:40</p>
+<p class="creator"><a href="http://www.gnu.org/software/emacs/">Emacs</a> 26.1 (<a href="http://orgmode.org">Org</a> mode 8.2.10)</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>
